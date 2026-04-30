@@ -94,6 +94,7 @@ select:hover { background:#e8eaef; }
   width:100%; height:100%;
   cursor:crosshair;
   position:absolute; top:0; left:0;
+  touch-action:none;
 }
 #c.grab     { cursor:grab; }
 #c.grabbing { cursor:grabbing; }
@@ -826,6 +827,111 @@ canvasEl.addEventListener('mouseleave', () => {
   hideGhost(); isDragging = dragMoved = false;
   canvasEl.className = '';
   if (bpHover) { bpHover = null; drawBauplanAll(); }
+});
+
+/* ══════════════════════════════════════════════════
+   TOUCH EVENTS  (iPad / Touchscreen)
+   • 1 Finger ziehen  → Orbit drehen (nur 3D)
+   • 2 Finger pinchen → Zoom (nur 3D)
+   • Tippen           → Würfel setzen / Bauplan-Zone
+   • Lang drücken     → Würfel entfernen (3D / Ortho)
+══════════════════════════════════════════════════ */
+let touchMoved    = false;
+let touchStartX   = 0, touchStartY = 0;
+let lastTouchX    = 0, lastTouchY  = 0;
+let lastPinchDist = 0;
+let longPressTimer = null;
+
+canvasEl.addEventListener('touchstart', e => {
+  e.preventDefault();
+  clearTimeout(longPressTimer);
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    touchStartX = lastTouchX = t.clientX;
+    touchStartY = lastTouchY = t.clientY;
+    touchMoved = false;
+    // Lang drücken (600 ms) → Würfel entfernen
+    const cx = t.clientX, cy = t.clientY;
+    longPressTimer = setTimeout(() => {
+      if (!touchMoved) {
+        const fakeE = { clientX: cx, clientY: cy };
+        const H = wrap.clientHeight;
+        const pi = getPaneInfo(fakeE);
+        if (pi.view !== 'bauplan') {
+          const pos = pickCube(fakeE, pi.view, pi.paneX, pi.paneW, H);
+          if (pos) removeCube(pos.x, pos.y, pos.z);
+        }
+      }
+    }, 600);
+  } else if (e.touches.length === 2) {
+    touchMoved = true;   // Kein Tap-Auslöser bei 2 Fingern
+    lastPinchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+  }
+}, { passive: false });
+
+canvasEl.addEventListener('touchmove', e => {
+  e.preventDefault();
+  clearTimeout(longPressTimer);
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    const dx = t.clientX - lastTouchX;
+    const dy = t.clientY - lastTouchY;
+    lastTouchX = t.clientX;
+    lastTouchY = t.clientY;
+    if (Math.hypot(t.clientX - touchStartX, t.clientY - touchStartY) > 8) touchMoved = true;
+    if (touchMoved) {
+      const pi = getPaneInfo(t);
+      if (pi.view === '3d') {
+        orbitTheta -= dx * 0.44;
+        orbitPhi    = Math.max(4, Math.min(83, orbitPhi - dy * 0.35));
+      }
+    }
+  } else if (e.touches.length === 2) {
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const pi = getPaneInfo({ clientX: midX, clientY: midY });
+    if (pi.view === '3d') {
+      orbitRadius = Math.max(5, Math.min(35, orbitRadius + (lastPinchDist - dist) * 0.05));
+    }
+    lastPinchDist = dist;
+  }
+}, { passive: false });
+
+canvasEl.addEventListener('touchend', e => {
+  e.preventDefault();
+  clearTimeout(longPressTimer);
+  if (!touchMoved && e.changedTouches.length === 1) {
+    const t = e.changedTouches[0];
+    const H = wrap.clientHeight;
+    const pi = getPaneInfo(t);
+    if (pi.view === '3d') {
+      const pos = pickPlacement(t, pi.paneX, pi.paneW, H);
+      if (pos) addCube(pos.x, pos.y, pos.z, selectedColor);
+    } else if (pi.view === 'bauplan') {
+      const ci = bpCellAt(t, pi.paneX, pi.paneW);
+      if (ci) {
+        if (ci.zone === 'plus') {
+          addCube(ci.col, stackHeight(ci.col, ci.row), ci.row, selectedColor);
+        } else {
+          const h = stackHeight(ci.col, ci.row);
+          if (h > 0) removeCube(ci.col, h - 1, ci.row);
+        }
+      }
+    }
+  }
+  touchMoved = false;
+}, { passive: false });
+
+canvasEl.addEventListener('touchcancel', () => {
+  clearTimeout(longPressTimer);
+  touchMoved = false;
 });
 
 /* ══════════════════════════════════════════════════
