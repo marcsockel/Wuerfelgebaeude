@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Würfelgebäude – Grundschule</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: #eef0f3;
+  color: #2c3540;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── Toolbar ─────────────────────────────────────── */
+#toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 7px 14px;
+  background: #ffffff;
+  border-bottom: 1px solid #dde1e8;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+  z-index: 20;
+  min-height: 48px;
+}
+.t-group { display:flex; align-items:center; gap:5px; }
+.t-sep   { width:1px; height:20px; background:#dde1e8; flex-shrink:0; }
+.t-label { font-size:11px; color:#7a8898; white-space:nowrap; }
+
+select {
+  background:#f2f4f7; color:#2c3540;
+  border:1px solid #cdd3db; border-radius:5px;
+  padding:3px 7px; font-size:12px; cursor:pointer; outline:none;
+}
+select:hover { background:#e8eaef; }
+
+.swatch {
+  width:23px; height:23px; border-radius:4px;
+  border:2px solid transparent; cursor:pointer;
+  box-shadow:0 1px 3px rgba(0,0,0,0.18);
+  transition:transform .12s, border-color .12s;
+}
+.swatch:hover  { transform:scale(1.15); }
+.swatch.active { border-color:#1e6bb8; transform:scale(1.2); }
+
+.vbtn {
+  background:#f2f4f7; color:#4a5a6a;
+  border:1px solid #cdd3db; border-radius:5px;
+  padding:3px 9px; font-size:11px; cursor:pointer;
+  transition:background .12s, color .12s;
+  white-space:nowrap;
+}
+.vbtn:hover  { background:#e4e8ed; color:#1e2a38; }
+.vbtn.active { background:#1e6bb8; color:#fff; border-color:#1558a0; }
+
+#splitBtn {
+  background:#f2f4f7; color:#4a5a6a;
+  border:1px solid #cdd3db; border-radius:5px;
+  padding:3px 9px; font-size:11px; cursor:pointer;
+  transition:background .12s;
+}
+#splitBtn:hover  { background:#e4e8ed; }
+#splitBtn.active { background:#1e6bb8; color:#fff; border-color:#1558a0; }
+
+#counter { font-size:13px; font-weight:600; color:#1a7a40; white-space:nowrap; }
+
+#clearBtn {
+  background:#fef2f2; color:#c0392b;
+  border:1px solid #f0c8c4; border-radius:5px;
+  padding:3px 9px; font-size:11px; cursor:pointer;
+  transition:background .12s;
+}
+#clearBtn:hover { background:#fde0de; }
+
+/* ── Canvas area ─────────────────────────────────── */
+#wrap {
+  flex:1;
+  position:relative;
+  overflow:hidden;
+  background:#d4e2ee;
+}
+
+/* Three.js canvas */
+#c {
+  display:block;
+  width:100%; height:100%;
+  cursor:crosshair;
+  position:absolute; top:0; left:0;
+}
+#c.grab     { cursor:grab; }
+#c.grabbing { cursor:grabbing; }
+#c.ptr      { cursor:pointer; }
+
+/* Bauplan 2D overlay – always pointer-events:none,
+   mouse events go to #c beneath it */
+#bauplan {
+  display:none;
+  position:absolute; top:0; left:0;
+  width:100%; height:100%;
+  pointer-events:none;
+}
+
+/* Split divider */
+#divider {
+  display:none;
+  position:absolute; top:0; left:50%;
+  transform:translateX(-50%);
+  width:2px; height:100%;
+  background:rgba(120,150,190,0.35);
+  pointer-events:none; z-index:5;
+}
+#divider.show { display:block; }
+
+/* Pane labels */
+.plabel {
+  position:absolute; top:10px;
+  font-size:10.5px; font-weight:600;
+  letter-spacing:1.8px;
+  color:rgba(60,90,135,0.55);
+  pointer-events:none; z-index:6;
+}
+#lbl-single { left:13px; }
+#lbl-left   { left:13px; display:none; }
+#lbl-right  { left:calc(50% + 13px); display:none; }
+
+/* Help text */
+#help {
+  position:absolute; bottom:10px; right:12px;
+  font-size:10.5px; line-height:1.65;
+  color:rgba(60,90,130,0.55);
+  text-align:right; pointer-events:none; z-index:6;
+}
+
+/* Iso rotation controls */
+#iso-ctrl {
+  position:absolute; bottom:18px; left:50%;
+  transform:translateX(-50%);
+  display:none; gap:8px; z-index:10;
+}
+.iso-arrow {
+  background:rgba(255,255,255,0.84);
+  border:1px solid #cdd3db; border-radius:8px;
+  width:40px; height:40px; font-size:18px;
+  cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,0.13);
+  transition:background .12s, transform .10s;
+  color:#3a4f6a; user-select:none;
+}
+.iso-arrow:hover  { background:rgba(255,255,255,0.98); }
+.iso-arrow:active { transform:scale(0.90); }
+</style>
+</head>
+<body>
+
+<!-- ═══ TOOLBAR ═══ -->
+<div id="toolbar">
+
+  <div class="t-group">
+    <span style="font-size:15px;font-weight:700;color:#1e6bb8;letter-spacing:.2px;">🧊 Würfelgebäude</span>
+  </div>
+
+  <div class="t-sep"></div>
+
+  <div class="t-group">
+    <span class="t-label">Grundfläche:</span>
+    <select id="gridSel">
+      <option value="3">3 × 3</option>
+      <option value="4" selected>4 × 4</option>
+      <option value="5">5 × 5</option>
+      <option value="6">6 × 6</option>
+    </select>
+  </div>
+
+  <div class="t-sep"></div>
+
+  <div class="t-group">
+    <span class="t-label">Farbe:</span>
+    <div id="palette" style="display:flex;gap:4px;"></div>
+  </div>
+
+  <div class="t-sep"></div>
+
+  <!-- Single-mode view buttons -->
+  <div class="t-group" id="single-views">
+    <span class="t-label">Ansicht:</span>
+    <button class="vbtn active" data-view="3d">3D</button>
+    <button class="vbtn" data-view="iso">Iso</button>
+    <button class="vbtn" data-view="top">Oben</button>
+    <button class="vbtn" data-view="front">Vorne</button>
+    <button class="vbtn" data-view="side">Seite</button>
+    <button class="vbtn" data-view="bauplan">📐 Bauplan</button>
+  </div>
+
+  <!-- Split-mode view selectors (hidden until split active) -->
+  <div class="t-group" id="split-views" style="display:none">
+    <span class="t-label">Links:</span>
+    <select id="leftSel">
+      <option value="3d">3D</option>
+      <option value="iso">Isometrisch</option>
+      <option value="top">Draufsicht</option>
+      <option value="front">Vorderansicht</option>
+      <option value="side">Seitenansicht</option>
+      <option value="bauplan">Bauplan</option>
+    </select>
+    <span class="t-label">Rechts:</span>
+    <select id="rightSel">
+      <option value="3d">3D</option>
+      <option value="iso">Isometrisch</option>
+      <option value="top">Draufsicht</option>
+      <option value="front">Vorderansicht</option>
+      <option value="side">Seitenansicht</option>
+      <option value="bauplan" selected>Bauplan</option>
+    </select>
+  </div>
+
+  <div class="t-sep"></div>
+
+  <div class="t-group" style="margin-left:auto;">
+    <span id="counter">🔢 Würfel: 0</span>
+  </div>
+
+  <button id="splitBtn">⊞ Teilen</button>
+  <button id="clearBtn">🗑 Leeren</button>
+
+</div>
+
+<!-- ═══ CANVAS AREA ═══ -->
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <canvas id="bauplan"></canvas>
+  <div id="divider"></div>
+  <div id="lbl-single" class="plabel">3D-PERSPEKTIVE</div>
+  <div id="lbl-left"   class="plabel">3D-PERSPEKTIVE</div>
+  <div id="lbl-right"  class="plabel">BAUPLAN</div>
+  <div id="help">
+    Linksklick: Würfel setzen &nbsp;·&nbsp; Rechtsklick: entfernen<br>
+    Ziehen: drehen &nbsp;·&nbsp; Scrollen: zoomen
+  </div>
+  <div id="iso-ctrl">
+    <button class="iso-arrow" id="isoLeft"  title="Links drehen">&#9664;</button>
+    <button class="iso-arrow" id="isoRight" title="Rechts drehen">&#9654;</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════
+   CONSTANTS
+══════════════════════════════════════════════════ */
+const WOOD    = '__wood__';
+const PALETTE = ['#e74c3c','#e67e22','#f1c40f','#2ecc71','#3498db','#9b59b6','#ecf0f1','#95a5a6', WOOD];
+const LABELS  = { '3d':'3D-PERSPEKTIVE', iso:'ISOMETRISCH', top:'DRAUFSICHT',
+                  front:'VORDERANSICHT', side:'SEITENANSICHT', bauplan:'BAUPLANANSICHT' };
+const HELP_3D  = 'Linksklick: Würfel setzen &nbsp;·&nbsp; Rechtsklick: entfernen<br>Ziehen: drehen &nbsp;·&nbsp; Scrollen: zoomen';
+const HELP_BP  = 'Linksklick: Würfel setzen &nbsp;·&nbsp; Rechtsklick: entfernen &nbsp;·&nbsp; Zahl = Stapelhöhe';
+const HELP_RO  = 'Nur-Lese-Ansicht';
+
+/* ══════════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════════ */
+let selectedColor = PALETTE[0];
+let gridSize      = 4;
+let splitMode     = false;
+let currentView   = '3d';   // single mode
+let leftView      = '3d';   // split mode
+let rightView     = 'bauplan';
+
+// Iso rotation (0 / 90 / 180 / 270 degrees)
+let isoRotation = 0;
+
+// Orbit
+let orbitTheta  = -40;
+let orbitPhi    = 38;
+let orbitRadius = 14;
+
+// Drag tracking
+let isDragging = false;
+let dragMoved  = false;
+let dragStartX = 0, dragStartY = 0;
+let lastDragX  = 0, lastDragY  = 0;
+
+// Bauplan hover
+let bpHover = null; // {col, row} | null
+
+/* ══════════════════════════════════════════════════
+   CUBE DATA
+══════════════════════════════════════════════════ */
+const cubesMap = new Map(); // "gx,gy,gz" → {mesh, edge, color, gx, gy, gz}
+
+/* ══════════════════════════════════════════════════
+   THREE.JS
+══════════════════════════════════════════════════ */
+const wrap     = document.getElementById('wrap');
+const canvasEl = document.getElementById('c');
+
+const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.autoClear = false;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xd4e2ee);
+
+const perspCam = new THREE.PerspectiveCamera(44, 1, 0.1, 200);
+const orthoCam = new THREE.OrthographicCamera(-8, 8, 8, -8, 0.1, 200);
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+const sun = new THREE.DirectionalLight(0xffffff, 0.72);
+sun.position.set(6, 12, 8);
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0xddeeff, 0.22);
+fill.position.set(-5, 4, -7);
+scene.add(fill);
+
+// Shared geometry
+const BOX_SIZE = 0.97;
+const BOX_GEO  = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE);
+const EDGE_GEO = new THREE.EdgesGeometry(new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE));
+const EDGE_MAT = new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.25, transparent: true });
+
+// Procedural wood texture
+function createWoodTexture() {
+  const size = 256;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  const c = cv.getContext('2d');
+  const id = c.createImageData(size, size);
+  const d = id.data;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const fx = x / size, fy = y / size;
+      // Concentric rings with slight waviness for grain
+      const ring  = Math.sin((fx * 7 + Math.sin(fy * 11) * 0.45 + Math.cos(fx * 5) * 0.3) * Math.PI * 5) * 0.5 + 0.5;
+      const grain = (Math.sin(fy * 90 + fx * 4) * 0.5 + 0.5) * 0.18;
+      const v = ring * 0.82 + grain;
+      const i = (y * size + x) * 4;
+      d[i]   = Math.min(255, Math.round(138 + v * 82));   // R
+      d[i+1] = Math.min(255, Math.round( 82 + v * 52));   // G
+      d[i+2] = Math.min(255, Math.round( 28 + v * 26));   // B
+      d[i+3] = 255;
+    }
+  }
+  c.putImageData(id, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+const woodTexture = createWoodTexture();
+
+function makeCubeMat(color) {
+  if (color === WOOD) return new THREE.MeshLambertMaterial({ map: woodTexture });
+  return new THREE.MeshLambertMaterial({ color: new THREE.Color(color) });
+}
+
+let ghostMesh = null, ghostEdge = null;
+
+/* ══════════════════════════════════════════════════
+   GRID
+══════════════════════════════════════════════════ */
+let gridGroup = null, gridPlane = null;
+
+function buildGrid() {
+  if (gridGroup) scene.remove(gridGroup);
+  if (gridPlane) scene.remove(gridPlane);
+  gridGroup = new THREE.Group();
+
+  for (let c = 0; c < gridSize; c++) {
+    for (let r = 0; r < gridSize; r++) {
+      const geo  = new THREE.PlaneGeometry(0.975, 0.975);
+      const col  = ((c + r) % 2 === 0) ? 0xf0f4f8 : 0xe4ecf4;
+      const tile = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide }));
+      tile.rotation.x = -Math.PI / 2;
+      tile.position.set(c - gridSize / 2 + 0.5, 0.001, r - gridSize / 2 + 0.5);
+      gridGroup.add(tile);
+    }
+  }
+
+  const lm = new THREE.LineBasicMaterial({ color: 0x9aaabe, opacity: 0.55, transparent: true });
+  for (let i = 0; i <= gridSize; i++) {
+    const a = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(i - gridSize/2, 0.003, -gridSize/2),
+      new THREE.Vector3(i - gridSize/2, 0.003,  gridSize/2),
+    ]);
+    gridGroup.add(new THREE.Line(a, lm));
+    const b = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-gridSize/2, 0.003, i - gridSize/2),
+      new THREE.Vector3( gridSize/2, 0.003, i - gridSize/2),
+    ]);
+    gridGroup.add(new THREE.Line(b, lm));
+  }
+  scene.add(gridGroup);
+
+  const pg  = new THREE.PlaneGeometry(gridSize, gridSize);
+  const pm  = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
+  gridPlane = new THREE.Mesh(pg, pm);
+  gridPlane.rotation.x = -Math.PI / 2;
+  scene.add(gridPlane);
+}
+
+/* ══════════════════════════════════════════════════
+   CUBE MANAGEMENT
+══════════════════════════════════════════════════ */
+function worldPos(gx, gy, gz) {
+  return new THREE.Vector3(gx - gridSize/2 + 0.5, gy + 0.5, gz - gridSize/2 + 0.5);
+}
+
+function addCube(gx, gy, gz, color) {
+  const key = `${gx},${gy},${gz}`;
+  if (cubesMap.has(key)) return;
+  if (gx < 0 || gx >= gridSize || gz < 0 || gz >= gridSize || gy > 14) return;
+  const mat  = makeCubeMat(color);
+  const mesh = new THREE.Mesh(BOX_GEO, mat);
+  const pos  = worldPos(gx, gy, gz);
+  mesh.position.copy(pos);
+  mesh.userData = { isCube: true, gx, gy, gz };
+  scene.add(mesh);
+  const edge = new THREE.LineSegments(EDGE_GEO, EDGE_MAT);
+  edge.position.copy(pos);
+  scene.add(edge);
+  cubesMap.set(key, { mesh, edge, color, gx, gy, gz });
+  onCubesChanged();
+}
+
+function removeCube(gx, gy, gz) {
+  const data = cubesMap.get(`${gx},${gy},${gz}`);
+  if (!data) return;
+  scene.remove(data.mesh); scene.remove(data.edge);
+  data.mesh.material.dispose();
+  cubesMap.delete(`${gx},${gy},${gz}`);
+  onCubesChanged();
+}
+
+function clearAll() {
+  for (const d of cubesMap.values()) {
+    scene.remove(d.mesh); scene.remove(d.edge); d.mesh.material.dispose();
+  }
+  cubesMap.clear();
+  onCubesChanged();
+}
+
+function onCubesChanged() {
+  document.getElementById('counter').textContent = `🔢 Würfel: ${cubesMap.size}`;
+  drawBauplanAll();
+}
+
+function allCubeMeshes() { return [...cubesMap.values()].map(d => d.mesh); }
+
+/* ══════════════════════════════════════════════════
+   GHOST CUBE
+══════════════════════════════════════════════════ */
+function ensureGhost() {
+  if (ghostMesh) return;
+  ghostMesh = new THREE.Mesh(BOX_GEO,
+    new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.28, depthWrite: false }));
+  ghostMesh.userData.isGhost = true;
+  scene.add(ghostMesh);
+  ghostEdge = new THREE.LineSegments(EDGE_GEO,
+    new THREE.LineBasicMaterial({ color: 0x1e6bb8, opacity: 0.65, transparent: true }));
+  scene.add(ghostEdge);
+}
+function showGhost(gx, gy, gz) {
+  ensureGhost();
+  ghostMesh.material.color.set(selectedColor === WOOD ? '#8B5E3C' : selectedColor);
+  const p = worldPos(gx, gy, gz);
+  ghostMesh.position.copy(p); ghostEdge.position.copy(p);
+  ghostMesh.visible = ghostEdge.visible = true;
+}
+function hideGhost() {
+  if (ghostMesh) ghostMesh.visible = ghostEdge.visible = false;
+}
+
+/* ══════════════════════════════════════════════════
+   CAMERA
+══════════════════════════════════════════════════ */
+function setCamForView(view, paneW, paneH) {
+  if (view === '3d') {
+    perspCam.aspect = paneW / paneH;
+    perspCam.updateProjectionMatrix();
+    const t = orbitTheta * Math.PI / 180, p = orbitPhi * Math.PI / 180;
+    perspCam.position.set(
+      orbitRadius * Math.cos(p) * Math.sin(t),
+      orbitRadius * Math.sin(p),
+      orbitRadius * Math.cos(p) * Math.cos(t)
+    );
+    perspCam.lookAt(0, gridSize * 0.28, 0);
+    return perspCam;
+  }
+
+  const s = gridSize * 1.1, aspect = paneW / paneH;
+  orthoCam.left   = -s * aspect;  orthoCam.right  = s * aspect;
+  orthoCam.top    =  s;           orthoCam.bottom = -s;
+
+  const d    = gridSize * 4;
+  const midY = gridSize * 0.42;
+
+  if (view === 'iso') {
+    // True isometric angle: az=45°+isoRotation, el=arctan(1/√2)≈35.26°
+    const az = Math.PI / 4 + isoRotation * Math.PI / 180;
+    const el = Math.atan(1 / Math.sqrt(2));
+    const tx = 0, ty = gridSize * 0.30;
+    orthoCam.position.set(
+      tx + d * Math.cos(el) * Math.cos(az),
+      ty + d * Math.sin(el),
+       0 + d * Math.cos(el) * Math.sin(az)
+    );
+    orthoCam.lookAt(tx, ty, 0);
+    orthoCam.up.set(0, 1, 0);
+  } else if (view === 'top') {
+    orthoCam.position.set(0, d, 0.001);
+    orthoCam.lookAt(0, 0, 0);
+    orthoCam.up.set(0, 0, -1);
+  } else if (view === 'front') {
+    orthoCam.position.set(0, midY, d);
+    orthoCam.lookAt(0, midY, 0);
+    orthoCam.up.set(0, 1, 0);
+  } else if (view === 'side') {
+    orthoCam.position.set(d, midY, 0);
+    orthoCam.lookAt(0, midY, 0);
+    orthoCam.up.set(0, 1, 0);
+  }
+  orthoCam.updateProjectionMatrix();
+  return orthoCam;
+}
+
+/* ══════════════════════════════════════════════════
+   RAYCASTING
+══════════════════════════════════════════════════ */
+const raycaster = new THREE.Raycaster();
+const mouse2    = new THREE.Vector2();
+
+function setMouse(e, paneX, paneW) {
+  const rect = canvasEl.getBoundingClientRect();
+  mouse2.x =  ((e.clientX - rect.left - paneX) / paneW) * 2 - 1;
+  mouse2.y = -((e.clientY - rect.top)  / rect.height)   * 2 + 1;
+}
+
+function pickPlacement(e, paneX, paneW, paneH) {
+  setMouse(e, paneX, paneW);
+  raycaster.setFromCamera(mouse2, setCamForView('3d', paneW, paneH));
+  const ch = raycaster.intersectObjects(allCubeMeshes());
+  if (ch.length > 0) {
+    const n = ch[0].face.normal.clone().transformDirection(ch[0].object.matrixWorld);
+    if (n.y > 0.5) {
+      const { gx, gy, gz } = ch[0].object.userData;
+      return { x: gx, y: gy + 1, z: gz };
+    }
+    return null;
+  }
+  const ph = raycaster.intersectObject(gridPlane);
+  if (ph.length > 0) {
+    const pt = ph[0].point;
+    const x  = Math.floor(pt.x + gridSize / 2);
+    const z  = Math.floor(pt.z + gridSize / 2);
+    if (x >= 0 && x < gridSize && z >= 0 && z < gridSize) return { x, y: 0, z };
+  }
+  return null;
+}
+
+function pickCube(e, view, paneX, paneW, paneH) {
+  setMouse(e, paneX, paneW);
+  raycaster.setFromCamera(mouse2, setCamForView(view, paneW, paneH));
+  const hits = raycaster.intersectObjects(allCubeMeshes());
+  if (hits.length > 0) {
+    const { gx, gy, gz } = hits[0].object.userData;
+    return { x: gx, y: gy, z: gz };
+  }
+  return null;
+}
+
+/* ══════════════════════════════════════════════════
+   PANE ROUTING
+══════════════════════════════════════════════════ */
+function getPaneInfo(e) {
+  const W = wrap.clientWidth;
+  if (!splitMode) return { view: currentView, paneX: 0, paneW: W };
+  const rect = canvasEl.getBoundingClientRect();
+  const mx   = e.clientX - rect.left;
+  return mx < W / 2
+    ? { view: leftView,  paneX: 0,   paneW: W / 2 }
+    : { view: rightView, paneX: W/2, paneW: W / 2 };
+}
+
+/* ══════════════════════════════════════════════════
+   BAUPLAN  (2D canvas overlay, pointer-events:none)
+══════════════════════════════════════════════════ */
+const bauplanEl = document.getElementById('bauplan');
+const bCtx      = bauplanEl.getContext('2d');
+
+function stackHeight(col, row) {
+  for (let y = 14; y >= 0; y--)
+    if (cubesMap.has(`${col},${y},${row}`)) return y + 1;
+  return 0;
+}
+function topColor(col, row) {
+  for (let y = 14; y >= 0; y--) {
+    const d = cubesMap.get(`${col},${y},${row}`);
+    if (d) return d.color;
+  }
+  return null;
+}
+
+function bpLayout(paneX, paneW, paneH) {
+  const pad   = Math.min(paneW, paneH) * 0.10;
+  const avail = Math.min(paneW - pad * 2, paneH - pad * 2) * 0.80;  // 20% kleiner
+  const cell  = avail / gridSize;
+  const ox    = paneX + (paneW - cell * gridSize) / 2;
+  const oy    = (paneH - cell * gridSize) / 2;
+  return { cell, ox, oy };
+}
+
+function drawBauplanPane(paneX, paneW, paneH, hov) {
+  const { cell, ox, oy } = bpLayout(paneX, paneW, paneH);
+
+  // Background
+  bCtx.fillStyle = '#d4e2ee';
+  bCtx.fillRect(paneX, 0, paneW, paneH);
+
+  for (let col = 0; col < gridSize; col++) {
+    for (let row = 0; row < gridSize; row++) {
+      const x  = ox + col * cell;
+      const y  = oy + row * cell;
+      const h  = stackHeight(col, row);
+      const hv = hov && hov.col === col && hov.row === row;
+
+      // Cell fill
+      if (h > 0) {
+        bCtx.globalAlpha = 0.52;
+        bCtx.fillStyle   = topColor(col, row);
+        bCtx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+        bCtx.globalAlpha = 1;
+      } else {
+        bCtx.fillStyle = ((col + row) % 2 === 0) ? '#eef3f8' : '#e4edf5';
+        bCtx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+      }
+
+      // Hover ring (color depends on zone)
+      if (hv) {
+        const zoneColor = hov.zone === 'plus'
+          ? 'rgba(30,107,184,0.75)' : 'rgba(180,40,40,0.75)';
+        bCtx.strokeStyle = zoneColor;
+        bCtx.lineWidth   = 2.5;
+        bCtx.strokeRect(x + 2.5, y + 2.5, cell - 5, cell - 5);
+        // Faint divider between + and − zone
+        bCtx.strokeStyle = 'rgba(100,130,180,0.22)';
+        bCtx.lineWidth   = 1;
+        bCtx.beginPath();
+        bCtx.moveTo(x + 5, y + cell / 2);
+        bCtx.lineTo(x + cell - 5, y + cell / 2);
+        bCtx.stroke();
+      }
+
+      // Number
+      bCtx.textAlign = 'center'; bCtx.textBaseline = 'middle';
+      if (h > 0) {
+        const fs = Math.round(cell * 0.48);
+        bCtx.font        = `bold ${fs}px 'Segoe UI',sans-serif`;
+        bCtx.shadowColor = 'rgba(0,0,0,0.25)';
+        bCtx.shadowBlur  = Math.round(cell * 0.07);
+        bCtx.fillStyle   = '#ffffff';
+        bCtx.fillText(String(h), x + cell / 2, y + cell / 2);
+        bCtx.shadowBlur  = 0;
+      } else {
+        const fs = Math.round(cell * 0.26);
+        bCtx.font      = `${fs}px 'Segoe UI',sans-serif`;
+        bCtx.fillStyle = 'rgba(90,120,160,0.32)';
+        bCtx.fillText('0', x + cell / 2, y + cell / 2);
+      }
+
+      // +1 / −1 hints
+      if (hv) {
+        const fs = Math.round(cell * 0.21);
+        bCtx.font = `bold ${fs}px 'Segoe UI',sans-serif`;
+        bCtx.textAlign = 'right';
+        // + (oben)
+        const plusActive  = hov.zone === 'plus';
+        bCtx.textBaseline = 'top';
+        bCtx.fillStyle    = plusActive ? 'rgba(30,107,184,1)' : 'rgba(30,107,184,0.38)';
+        bCtx.fillText('+1', x + cell - 4, y + 4);
+        // − (unten, nur wenn Stapel vorhanden)
+        if (h > 0) {
+          const minusActive = hov.zone === 'minus';
+          bCtx.textBaseline = 'bottom';
+          bCtx.fillStyle    = minusActive ? 'rgba(180,40,40,1)' : 'rgba(180,40,40,0.38)';
+          bCtx.fillText('−1', x + cell - 4, y + cell - 4);
+        }
+      }
+    }
+  }
+
+  // Grid lines
+  bCtx.strokeStyle = '#9aaabe'; bCtx.lineWidth = 1.3; bCtx.globalAlpha = 0.55;
+  for (let i = 0; i <= gridSize; i++) {
+    bCtx.beginPath(); bCtx.moveTo(ox + i * cell, oy); bCtx.lineTo(ox + i * cell, oy + gridSize * cell); bCtx.stroke();
+    bCtx.beginPath(); bCtx.moveTo(ox, oy + i * cell); bCtx.lineTo(ox + gridSize * cell, oy + i * cell); bCtx.stroke();
+  }
+  bCtx.globalAlpha = 1;
+
+  // Axis labels
+  const lfs = Math.max(10, Math.round(cell * 0.20));
+  bCtx.font = `${lfs}px 'Segoe UI',sans-serif`;
+  bCtx.fillStyle = 'rgba(70,100,145,0.60)';
+  for (let i = 0; i < gridSize; i++) {
+    bCtx.textAlign = 'center'; bCtx.textBaseline = 'bottom';
+    bCtx.fillText(String(i + 1), ox + i * cell + cell / 2, oy - lfs * 0.3);
+    bCtx.textAlign = 'right'; bCtx.textBaseline = 'middle';
+    bCtx.fillText(String(i + 1), ox - lfs * 0.4, oy + i * cell + cell / 2);
+  }
+}
+
+function drawBauplanAll() {
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  bCtx.clearRect(0, 0, W, H);
+  if (!splitMode) {
+    if (currentView === 'bauplan') drawBauplanPane(0, W, H, bpHover);
+  } else {
+    if (leftView  === 'bauplan') drawBauplanPane(0,   W/2, H, bpHover);
+    if (rightView === 'bauplan') drawBauplanPane(W/2, W/2, H, bpHover);
+  }
+}
+
+function bpCellAt(e, paneX, paneW) {
+  const rect = canvasEl.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+  const { cell, ox, oy } = bpLayout(paneX, paneW, rect.height);
+  const col = Math.floor((cx - ox) / cell);
+  const row = Math.floor((cy - oy) / cell);
+  if (col < 0 || col >= gridSize || row < 0 || row >= gridSize) return null;
+  const zone = (cy < oy + row * cell + cell / 2) ? 'plus' : 'minus';
+  return { col, row, zone };
+}
+
+/* ══════════════════════════════════════════════════
+   MOUSE EVENTS  (all on Three.js canvas)
+══════════════════════════════════════════════════ */
+canvasEl.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  isDragging = dragMoved = false;
+  dragStartX = lastDragX = e.clientX;
+  dragStartY = lastDragY = e.clientY;
+});
+
+canvasEl.addEventListener('mousemove', e => {
+  const H  = wrap.clientHeight;
+  const pi = getPaneInfo(e);
+
+  // Orbit drag
+  if (e.buttons === 1) {
+    const dx = e.clientX - lastDragX, dy = e.clientY - lastDragY;
+    lastDragX = e.clientX; lastDragY = e.clientY;
+    if (Math.hypot(e.clientX - dragStartX, e.clientY - dragStartY) > 5)
+      isDragging = dragMoved = true;
+    if (isDragging && pi.view === '3d') {
+      orbitTheta -= dx * 0.44;
+      orbitPhi    = Math.max(4, Math.min(83, orbitPhi - dy * 0.35));
+      canvasEl.classList.add('grabbing');
+    }
+    hideGhost();
+    if (bpHover) { bpHover = null; drawBauplanAll(); }
+    return;
+  }
+
+  // Ghost preview for 3D pane
+  if (!isDragging) {
+    if (pi.view === '3d') {
+      canvasEl.className = 'grab';
+      const pos = pickPlacement(e, pi.paneX, pi.paneW, H);
+      if (pos) showGhost(pos.x, pos.y, pos.z);
+      else     hideGhost();
+      if (bpHover) { bpHover = null; drawBauplanAll(); }
+    } else if (pi.view === 'bauplan') {
+      canvasEl.className = '';
+      canvasEl.style.cursor = 'pointer';
+      hideGhost();
+      const cell = bpCellAt(e, pi.paneX, pi.paneW);
+      if (JSON.stringify(cell) !== JSON.stringify(bpHover)) {
+        bpHover = cell;
+        drawBauplanAll();
+      }
+    } else {
+      canvasEl.className = '';
+      canvasEl.style.cursor = 'default';
+      hideGhost();
+      if (bpHover) { bpHover = null; drawBauplanAll(); }
+    }
+  }
+});
+
+canvasEl.addEventListener('mouseup', e => {
+  canvasEl.classList.remove('grabbing');
+  if (!dragMoved && e.button === 0) {
+    const H  = wrap.clientHeight;
+    const pi = getPaneInfo(e);
+    if (pi.view === '3d') {
+      const pos = pickPlacement(e, pi.paneX, pi.paneW, H);
+      if (pos) addCube(pos.x, pos.y, pos.z, selectedColor);
+    } else if (pi.view === 'bauplan') {
+      const ci = bpCellAt(e, pi.paneX, pi.paneW);
+      if (ci) {
+        if (ci.zone === 'plus') {
+          addCube(ci.col, stackHeight(ci.col, ci.row), ci.row, selectedColor);
+        } else {
+          const h = stackHeight(ci.col, ci.row);
+          if (h > 0) removeCube(ci.col, h - 1, ci.row);
+        }
+      }
+    }
+  }
+  isDragging = dragMoved = false;
+});
+
+canvasEl.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const H  = wrap.clientHeight;
+  const pi = getPaneInfo(e);
+  if (pi.view !== 'bauplan') {
+    const pos = pickCube(e, pi.view, pi.paneX, pi.paneW, H);
+    if (pos) removeCube(pos.x, pos.y, pos.z);
+  } else {
+    const cell = bpCellAt(e, pi.paneX, pi.paneW);
+    if (cell) { const h = stackHeight(cell.col, cell.row); if (h > 0) removeCube(cell.col, h-1, cell.row); }
+  }
+});
+
+canvasEl.addEventListener('wheel', e => {
+  e.preventDefault();
+  const pi = getPaneInfo(e);
+  if (pi.view === '3d') {
+    orbitRadius = Math.max(5, Math.min(35, orbitRadius + e.deltaY * 0.04));
+  }
+}, { passive: false });
+
+canvasEl.addEventListener('mouseleave', () => {
+  hideGhost(); isDragging = dragMoved = false;
+  canvasEl.className = '';
+  if (bpHover) { bpHover = null; drawBauplanAll(); }
+});
+
+/* ══════════════════════════════════════════════════
+   RESIZE
+══════════════════════════════════════════════════ */
+function resizeAll() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w, h);
+  const dpr = window.devicePixelRatio || 1;
+  bauplanEl.width        = w * dpr;
+  bauplanEl.height       = h * dpr;
+  bauplanEl.style.width  = w + 'px';
+  bauplanEl.style.height = h + 'px';
+  bCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawBauplanAll();
+}
+window.addEventListener('resize', resizeAll);
+
+/* ══════════════════════════════════════════════════
+   RENDER LOOP
+══════════════════════════════════════════════════ */
+function renderPane(view, cssX, cssW, cssH) {
+  if (view === 'bauplan') return;
+  const cam = setCamForView(view, cssW, cssH);
+  renderer.setScissor(cssX, 0, cssW, cssH);
+  renderer.setViewport(cssX, 0, cssW, cssH);
+  renderer.setScissorTest(true);
+  renderer.render(scene, cam);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  renderer.clear();
+  if (!splitMode) {
+    renderPane(currentView, 0, W, H);
+  } else {
+    renderPane(leftView,  0,   W/2, H);
+    renderPane(rightView, W/2, W/2, H);
+  }
+  renderer.setScissorTest(false);
+}
+
+/* ══════════════════════════════════════════════════
+   TOOLBAR
+══════════════════════════════════════════════════ */
+// Palette
+const paletteEl = document.getElementById('palette');
+PALETTE.forEach(hex => {
+  const sw = document.createElement('div');
+  sw.className = 'swatch' + (hex === selectedColor ? ' active' : '');
+  if (hex === WOOD) {
+    sw.style.background = 'linear-gradient(135deg,#7a4a20 0%,#c48040 20%,#8b5a28 40%,#d4956a 60%,#7a4a20 80%,#b07040 100%)';
+    sw.title = 'Holz';
+  } else {
+    sw.style.background = hex;
+  }
+  sw.addEventListener('click', () => {
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+    sw.classList.add('active');
+    selectedColor = hex;
+    if (ghostMesh) ghostMesh.material.color.set(hex === WOOD ? '#8B5E3C' : hex);
+  });
+  paletteEl.appendChild(sw);
+});
+
+// Grid size
+document.getElementById('gridSel').addEventListener('change', e => {
+  const n = parseInt(e.target.value, 10);
+  if (n === gridSize) return;
+  gridSize    = n;
+  orbitRadius = 8 + gridSize * 1.3;
+  clearAll();
+  buildGrid();
+  resizeAll();
+});
+
+// Iso-control visibility & position
+const isoCtrl = document.getElementById('iso-ctrl');
+function updateIsoCtrl() {
+  let show = false, leftPct = 50;
+  if (!splitMode) {
+    show    = (currentView === 'iso');
+    leftPct = 50;
+  } else {
+    const li = leftView  === 'iso';
+    const ri = rightView === 'iso';
+    if      (li && ri) { show = true; leftPct = 50; }
+    else if (li)       { show = true; leftPct = 25; }
+    else if (ri)       { show = true; leftPct = 75; }
+  }
+  isoCtrl.style.display = show ? 'flex' : 'none';
+  isoCtrl.style.left    = leftPct + '%';
+}
+
+// UI state sync
+function syncUI() {
+  // Labels
+  const lblS = document.getElementById('lbl-single');
+  const lblL = document.getElementById('lbl-left');
+  const lblR = document.getElementById('lbl-right');
+  const helpEl = document.getElementById('help');
+
+  if (!splitMode) {
+    lblS.style.display = 'block'; lblL.style.display = lblR.style.display = 'none';
+    lblS.textContent = LABELS[currentView] || '';
+    helpEl.innerHTML = currentView === '3d' ? HELP_3D : currentView === 'bauplan' ? HELP_BP : HELP_RO;
+    bauplanEl.style.display = currentView === 'bauplan' ? 'block' : 'none';
+  } else {
+    lblS.style.display = 'none'; lblL.style.display = lblR.style.display = 'block';
+    lblL.textContent = LABELS[leftView] || '';
+    lblR.textContent = LABELS[rightView] || '';
+    const has3d = leftView === '3d' || rightView === '3d';
+    helpEl.innerHTML = has3d ? HELP_3D : (leftView === 'bauplan' || rightView === 'bauplan') ? HELP_BP : HELP_RO;
+    bauplanEl.style.display = (leftView === 'bauplan' || rightView === 'bauplan') ? 'block' : 'none';
+  }
+  hideGhost();
+  bpHover = null;
+  drawBauplanAll();
+  updateIsoCtrl();
+}
+
+// Single view buttons
+document.querySelectorAll('.vbtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentView = btn.dataset.view;
+    document.querySelectorAll('.vbtn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    canvasEl.className = '';
+    syncUI();
+  });
+});
+
+// Split toggle
+document.getElementById('splitBtn').addEventListener('click', () => {
+  splitMode = !splitMode;
+  const sb = document.getElementById('splitBtn');
+  sb.classList.toggle('active', splitMode);
+  sb.textContent = splitMode ? '⊟ Vereinen' : '⊞ Teilen';
+  document.getElementById('single-views').style.display = splitMode ? 'none' : 'flex';
+  document.getElementById('split-views').style.display  = splitMode ? 'flex' : 'none';
+  document.getElementById('divider').classList.toggle('show', splitMode);
+  canvasEl.className = '';
+  syncUI();
+});
+
+// Split view dropdowns
+document.getElementById('leftSel').addEventListener('change',  e => { leftView  = e.target.value; syncUI(); });
+document.getElementById('rightSel').addEventListener('change', e => { rightView = e.target.value; syncUI(); });
+
+// Iso rotation arrows
+document.getElementById('isoLeft').addEventListener('click', () => {
+  isoRotation = (isoRotation + 90) % 360;
+});
+document.getElementById('isoRight').addEventListener('click', () => {
+  isoRotation = (isoRotation - 90 + 360) % 360;
+});
+
+// Clear
+document.getElementById('clearBtn').addEventListener('click', clearAll);
+
+/* ══════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════ */
+buildGrid();
+resizeAll();
+animate();
+</script>
+</body>
+</html>
