@@ -271,7 +271,7 @@ const HELP_RO  = 'Nur-Lese-Ansicht';
 ══════════════════════════════════════════════════ */
 let selectedColor = PALETTE[0];
 let gridSize      = 4;
-let splitMode     = false;
+let splitMode     = true;
 let currentView   = '3d';   // single mode
 let leftView      = '3d';   // split mode
 let rightView     = 'bauplan';
@@ -329,34 +329,15 @@ const BOX_GEO  = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE);
 const EDGE_GEO = new THREE.EdgesGeometry(new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE));
 const EDGE_MAT = new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.25, transparent: true });
 
-// Procedural wood texture
-function createWoodTexture() {
-  const size = 256;
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = size;
-  const c = cv.getContext('2d');
-  const id = c.createImageData(size, size);
-  const d = id.data;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const fx = x / size, fy = y / size;
-      // Concentric rings with slight waviness for grain
-      const ring  = Math.sin((fx * 7 + Math.sin(fy * 11) * 0.45 + Math.cos(fx * 5) * 0.3) * Math.PI * 5) * 0.5 + 0.5;
-      const grain = (Math.sin(fy * 90 + fx * 4) * 0.5 + 0.5) * 0.18;
-      const v = ring * 0.82 + grain;
-      const i = (y * size + x) * 4;
-      d[i]   = Math.min(255, Math.round(138 + v * 82));   // R
-      d[i+1] = Math.min(255, Math.round( 82 + v * 52));   // G
-      d[i+2] = Math.min(255, Math.round( 28 + v * 26));   // B
-      d[i+3] = 255;
-    }
-  }
-  c.putImageData(id, 0, 0);
-  const tex = new THREE.CanvasTexture(cv);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  return tex;
-}
-const woodTexture = createWoodTexture();
+// Real wood texture — loaded via <img> so it works with file:// protocol
+const woodTexture = new THREE.Texture();
+woodTexture.wrapS = woodTexture.wrapT = THREE.RepeatWrapping;
+woodTexture.repeat.set(1, 1);
+(function () {
+  const img = new Image();
+  img.onload = () => { woodTexture.image = img; woodTexture.needsUpdate = true; };
+  img.src = 'plywood_diff_4k.png';
+})();
 
 function makeCubeMat(color) {
   if (color === WOOD) return new THREE.MeshLambertMaterial({ map: woodTexture });
@@ -1009,8 +990,19 @@ document.getElementById('clearBtn').addEventListener('click', clearAll);
 /* ══════════════════════════════════════════════════
    INIT
 ══════════════════════════════════════════════════ */
+// Start im Split-Modus
+(function () {
+  const sb = document.getElementById('splitBtn');
+  sb.classList.add('active');
+  sb.textContent = '⊟ Vereinen';
+  document.getElementById('single-views').style.display = 'none';
+  document.getElementById('split-views').style.display  = 'flex';
+  document.getElementById('divider').classList.add('show');
+})();
+
 buildGrid();
 resizeAll();
+syncUI();
 animate();
 </script>
 </body>
