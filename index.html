@@ -491,7 +491,52 @@ function removeCube(gx, gy, gz) {
   scene.remove(data.mesh); scene.remove(data.edge);
   data.mesh.material.dispose();
   cubesMap.delete(`${gx},${gy},${gz}`);
+  applyGravity(gx, gy, gz);   // Würfel oben drüber fallen lassen
   onCubesChanged();
+}
+
+/* ── Gravity: Würfel oberhalb fallen lassen ── */
+const fallingAnims = [];   // { mesh, edge, fromY, toY, startTime }
+const FALL_MS = 260;       // Dauer der Fall-Animation in ms
+
+function applyGravity(gx, removedGY, gz) {
+  // Alle Würfel im gleichen Stapel oberhalb der entfernten Position sammeln
+  const above = [];
+  for (const data of cubesMap.values()) {
+    if (data.gx === gx && data.gz === gz && data.gy > removedGY) {
+      above.push(data);
+    }
+  }
+  if (!above.length) return;
+
+  // Von unten nach oben verarbeiten, damit Map-Keys nicht kollidieren
+  above.sort((a, b) => a.gy - b.gy);
+
+  const now = performance.now();
+  for (const data of above) {
+    const oldKey = `${data.gx},${data.gy},${data.gz}`;
+    const newGY  = data.gy - 1;
+    const newKey = `${data.gx},${newGY},${data.gz}`;
+
+    // Map sofort aktualisieren (Picking-Logik stimmt sofort)
+    cubesMap.delete(oldKey);
+    data.gy = newGY;
+    data.mesh.userData.gy = newGY;
+    cubesMap.set(newKey, data);
+
+    // Bestehende Animation für diesen Mesh ggf. abbrechen
+    const existing = fallingAnims.findIndex(a => a.mesh === data.mesh);
+    if (existing !== -1) fallingAnims.splice(existing, 1);
+
+    // Neue Fall-Animation eintragen
+    fallingAnims.push({
+      mesh:      data.mesh,
+      edge:      data.edge,
+      fromY:     data.mesh.position.y,
+      toY:       worldPos(gx, newGY, gz).y,
+      startTime: now,
+    });
+  }
 }
 
 function clearAll() {
@@ -1035,6 +1080,21 @@ function renderPane(view, cssX, cssW, cssH) {
 
 function animate() {
   requestAnimationFrame(animate);
+
+  // ── Fall-Animationen aktualisieren ──
+  if (fallingAnims.length) {
+    const now = performance.now();
+    for (let i = fallingAnims.length - 1; i >= 0; i--) {
+      const a = fallingAnims[i];
+      const t = Math.min(1, (now - a.startTime) / FALL_MS);
+      // Ease-in (t²) — wirkt wie Schwerkraft
+      const y = a.fromY + (a.toY - a.fromY) * (t * t);
+      a.mesh.position.y = y;
+      a.edge.position.y = y;
+      if (t >= 1) fallingAnims.splice(i, 1);
+    }
+  }
+
   const W = wrap.clientWidth, H = wrap.clientHeight;
   renderer.clear();
   if (!splitMode) {
